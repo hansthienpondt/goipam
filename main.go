@@ -3,9 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
-
-	"net"
 
 	//"github.com/hansthienpondt/goipam/pkg/labels"
 
@@ -71,7 +70,9 @@ func main() {
 		route.UpdateLabel(v)
 		route.UpdateLabel(ProdLabel)
 		fmt.Printf("Adding CIDR %s with labels '%s' to the IPAM table\n", route.String(), route.GetLabels())
-		rtable.Add(route)
+		if err := rtable.Add(route); err != nil {
+			fmt.Println(err)
+		}
 	}
 	// Printing the Stdout seperator
 	fmt.Println(strings.Repeat("#", 64))
@@ -79,92 +80,94 @@ func main() {
 	fmt.Println("The tree contains", rtable.Size(), "prefixes")
 	// Printing the Stdout seperator
 	fmt.Println(strings.Repeat("#", 64))
-	//ipamRoute := table.NewRoute(netaddr.MustParseIPPrefix("20.0.0.0/16"))
-	//ipamRoute.Attr.SetAttribute(encoding.Attribute{Key: "insertedby", Value: "hans"})
-	//ipamRoute.Attr.SetAttribute(encoding.Attribute{Key: "2ndlabel", Value: "hans2"})
-	//rtable.Add(ipamRoute.Cidr.IPNet(), ipamRoute.Attr)
 
+	// Inserting an additional single route with a label.
 	ipam2Route := table.NewRoute(netaddr.MustParseIPPrefix("192.168.0.192/26"))
+	//ipam2Route := table.NewRoute(netaddr.MustParseIPPrefix("192.168.0.128/25"))
 	ipam2Route.UpdateLabel(map[string]string{"foo": "bar", "boo": "hoo"})
-	rtable.Add(ipam2Route)
-	fmt.Println(ipam2Route)
-	fmt.Println(ipam2Route.Has("foo"))
+	if err := rtable.Add(ipam2Route); err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Printf("Adding CIDR %q with labels %q to the IPAM table\n", ipam2Route.String(), ipam2Route.GetLabels())
+		fmt.Printf("CIDR %q has label foo: %t\n", ipam2Route, ipam2Route.Has("foo"))
+	}
+	// Printing the Stdout seperator
+	fmt.Println(strings.Repeat("#", 64))
 
-	fmt.Println("WalkMatch -- find the parent for a given route")
+	// Lookup Methods in the routing table.
 	route1, _ := netaddr.ParseIPPrefix("192.168.0.255/32")
-	//c := rtable.Parents2(route1)
-	//fmt.Println(c)
+	fmt.Println("Finding the parents for route -- " + route1.String())
+	// Marshal it as a JSON.
 	c, _ := json.MarshalIndent(rtable.Parents(route1), "", "  ")
 	fmt.Println(string(c))
 
-	fmt.Println("Walk -- find the children for a given route")
 	route2, _ := netaddr.ParseIPPrefix("10.0.0.0/16")
+	fmt.Println("Finding the children for route -- " + route2.String())
 	d := rtable.Children(route2)
 	fmt.Println(d)
-
-	fmt.Println("----")
-	// Find free prefixes within a certain prefix
-	var t netaddr.IPSetBuilder
-
-	t.AddPrefix(netaddr.MustParseIPPrefix("10.0.0.0/16"))
-	e := rtable.ChildrenByCIDR(netaddr.MustParseIPPrefix("10.0.0.0/16"))
-	for _, pfx := range e {
-		t.RemovePrefix(pfx)
-	}
-	set, _ := t.IPSet()
-	fmt.Println(set.Prefixes())
-
-	fmt.Println(rtable.FindFreePrefix(netaddr.MustParseIPPrefix("10.0.0.0/16"), 19))
-
-	// Allocate a CIDR with prefixlength X , return the prefix and new list of free prefixes.
-	p, newSet, _ := set.RemoveFreePrefix(24)
-	fmt.Println(p, newSet.Prefixes())
-
-	fmt.Println(set.ContainsPrefix(netaddr.MustParseIPPrefix("11.255.0.0/16")))
-
-	//pre := table.NewRoute(netaddr.MustParseIPPrefix("10.0.0.0/16"))
-	//pre.Attr.SetAttribute(encoding.Attribute{Key: "foo", Value: "bar"})
-	//pre.Attr.SetAttribute(encoding.Attribute{Key: "boo", Value: "hoo"})
-	//pre.Attr.SetAttribute(encoding.Attribute{Key: "foo", Value: "bar"})
-
-	//fmt.Println(*pre)
-	//fmt.Printf("%T %T", pre.Cidr, pre.Label)
-
-	j, _ := json.MarshalIndent(rtable.GetTable(), "", "  ")
-	fmt.Println(string(j))
+	// Printing the Stdout seperator
 	fmt.Println(strings.Repeat("#", 64))
 
+	// Find free prefixes within a certain prefix
+	findfree := netaddr.MustParseIPPrefix("10.0.0.0/16")
+	var bitlen uint8 = 19
+	fmt.Println("Finding a free /" + strconv.Itoa(int(bitlen)) + " prefix in: " + findfree.String())
+	if pfx, ok := rtable.FreePrefixes(findfree); ok {
+		fmt.Printf("All free prefixes are: %s\n", pfx)
+	}
+
+	if pfx, ok := rtable.FindFreePrefix(findfree, bitlen); ok {
+		fmt.Println("Returned free prefix is: " + pfx.String())
+	}
+
+	//Alternate method: get Route object, search for free prefixes
+	if freer1, ok, _ := rtable.Get(findfree); ok {
+		pfx, _ := freer1.FindFreePrefix(rtable, bitlen)
+		fmt.Println("Alt Method, Returned free prefix is: " + pfx.String())
+	}
+
+	// Printing the Stdout seperator
+	fmt.Println(strings.Repeat("#", 64))
+	fmt.Println("Dumping route-table in JSON format:")
+	j, _ := json.MarshalIndent(rtable.GetTable(), "", "  ")
+	fmt.Println(string(j))
+	// Printing the Stdout seperator
+	fmt.Println(strings.Repeat("#", 64))
+	fmt.Println("Dumping route-table in String format:")
 	for _, v := range rtable.GetTable() {
 		fmt.Println(v.String(), v.GetLabels())
 	}
+	// Printing the Stdout seperator
 	fmt.Println(strings.Repeat("#", 64))
 
-	iprange := netaddr.MustParseIPRange("1.2.3.4-5.6.7.8")
-	fmt.Println(iprange.String())
+	iprange := netaddr.MustParseIPRange("193.168.0.0-193.168.0.132")
+	if err := rtable.AddRange(iprange); err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println("Iprange " + iprange.String() + " added to the routing table")
+	}
+	// Printing the Stdout seperator
+	fmt.Println(strings.Repeat("#", 64))
 
-	fmt.Println(rtable.GetCIDR("85.240.192.0/12"))
-	_, ci, _ := net.ParseCIDR("85.255.192.0/12")
-	ci2, _ := netaddr.ParseIPPrefix("85.255.192.0/12")
-	fmt.Println(ci, ci2.Masked())
-	fmt.Println(rtable.Get(ci2))
-	fmt.Println(rtable.Match(ci2))
-
+	// Create a selector (label filter) to get routes by label
 	selector := labels.NewSelector()
 	req, _ := labels.NewRequirement("type", selection.NotIn, []string{"aggregate"})
 	selector = selector.Add(*req)
-	fmt.Printf("final selector: %v\n", selector.String())
-	fmt.Printf("%T %v\n", selector, selector.String())
-
+	// Alternate definition of a selector, define by string.
 	sel, _ := labels.Parse("type notin (aggregate), description!=hans1")
-	for _, v := range rtable.GetByLabel(sel) {
-		fmt.Println(v.String(), v.GetLabels())
 
-		//fmt.Println(v.GetChildren(rtable))
-		free, ok := v.FindFreePrefix(rtable, 26)
-		if ok {
-			fmt.Println(free)
-		}
+	dumprtable1 := rtable.GetByLabel(selector)
+	dumprtable2 := rtable.GetByLabel(sel)
+
+	fmt.Println("Printing GetByLabel1 -- " + selector.String())
+	for _, v := range dumprtable1 {
+		fmt.Println(v, v.GetLabels())
 	}
-
+	fmt.Println("")
+	fmt.Println("Printing GetByLabel2 -- " + sel.String())
+	for _, v := range dumprtable2 {
+		fmt.Println(v, v.GetLabels())
+	}
+	// Printing the Stdout seperator
 	fmt.Println(strings.Repeat("#", 64))
 }
