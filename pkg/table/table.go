@@ -28,7 +28,7 @@ func (r *RouteTable) Add(route *Route) (err error) {
 	return r.tree.Add(route.IPNet(), route)
 }
 
-func (r *RouteTable) AddRange(iprange netaddr.IPRange) error {
+func (r *RouteTable) AddRange(iprange netaddr.IPRange) (err error) {
 	var bldr netaddr.IPSetBuilder
 	bldr.AddRange(iprange)
 	ipset, err := bldr.IPSet()
