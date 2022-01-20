@@ -81,6 +81,13 @@ func (r *Route) MarshalJSON() ([]byte, error) {
 }
 
 // Helper function to merge the currently assigned labels with a new labels.Set
+func (r *Route) MergeLabel(label labels.Set) {
+	var mergedlabel labels.Set
+	mergedlabel = labels.Merge(label, *r.labels)
+	r.labels = &mergedlabel
+}
+
+// Helper function to merge the currently assigned labels with a new labels.Set
 func (r *Route) UpdateLabel(label map[string]string) {
 	var mergedlabel labels.Set
 	mergedlabel = labels.Merge(labels.Set(label), *r.labels)
