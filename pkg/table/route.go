@@ -2,106 +2,81 @@ package table
 
 import (
 	"encoding/json"
-	"net"
+	"fmt"
+	"net/netip"
 
 	"k8s.io/apimachinery/pkg/labels"
-
-	"inet.af/netaddr"
 )
 
-type Route struct {
-	cidr   *netaddr.IPPrefix
-	labels *labels.Set
+type route struct {
+	cidr   netip.Prefix
+	labels labels.Set
 }
 
-func NewRoute(cidr netaddr.IPPrefix) *Route {
-	return &Route{
-		cidr:   &cidr,
-		labels: &labels.Set{},
+type routes []route
+
+func NewRoute(cidr netip.Prefix, l map[string]string) route {
+	var label labels.Set
+	if l == nil {
+		label = labels.Set{}
+	} else {
+		label = labels.Set(l)
+	}
+
+	return route{
+		cidr:   cidr.Masked(),
+		labels: label,
 	}
 }
 
-type Routes []*Route
-
-// satisfy the fmt.Stringer Interface.
-func (r *Route) String() string {
-	return r.cidr.String()
+func (r route) Equal(r2 route) bool {
+	if r.cidr == r2.cidr && labels.Equals(r.labels, r2.labels) {
+		return true
+	}
+	return false
 }
 
-// Helper function to find a free prefix with provided bitlen under the route/cidr.
-func (r *Route) freePrefixes(t *RouteTable) (s *netaddr.IPSet, ok bool) {
-	return t.freePrefixes(r.IPPrefix())
+func (r route) String() string {
+	var s string
+	s = fmt.Sprintf("%s %s", r.cidr.String(), r.labels.String())
+	return s
 }
 
-func (r *Route) FindFreePrefix(t *RouteTable, bitlen uint8) (p netaddr.IPPrefix, ok bool) {
-	return t.FindFreePrefix(r.IPPrefix(), bitlen)
+func (r route) Prefix() netip.Prefix {
+	return r.cidr
 }
 
-// satisfy the k8s labels.Label interface
-func (r *Route) Get(label string) string {
-	return r.labels.Get(label)
-}
-
-// Retrieve all children of a given route/cidr, main method implemented on struct RouteTable.
-func (r *Route) GetChildren(t *RouteTable) Routes {
-	return t.Children(*r.cidr)
-}
-
-// Retrieve all the labels assigned to a given route/cidr.
-func (r *Route) GetLabels() *labels.Set {
+func (r route) Labels() labels.Set {
 	return r.labels
 }
 
-// Retrieve all parents of a given route/cidr, main method implemented on struct RouteTable.
-func (r *Route) GetParents(t *RouteTable) Routes {
-	return t.Parents(*r.cidr)
+// satisfy the k8s labels.Label interface
+func (r route) Get(label string) string {
+	return r.labels.Get(label)
 }
 
 // satisfy the k8s labels.Label interface
-func (r *Route) Has(label string) bool {
+func (r route) Has(label string) bool {
 	return r.labels.Has(label)
 }
 
-// Helper function to provide std net.IPNet object.
-func (r *Route) IPNet() *net.IPNet {
-	return r.cidr.Masked().IPNet()
+func (r route) Children(rib *RIB) routes {
+	return rib.Children(r.cidr)
+}
+func (r route) Parents(rib *RIB) routes {
+	return rib.Parents(r.cidr)
 }
 
-// Helper function to return netaddr.IPPrefix (Masked) object.
-func (r *Route) IPPrefix() netaddr.IPPrefix {
-	return r.cidr.Masked()
+func (r route) UpdateLabel(label map[string]string) route {
+	r.labels = labels.Merge(labels.Set(label), r.labels)
+
+	return r
 }
 
 // Satisfy the json Interface.
-func (r *Route) MarshalJSON() ([]byte, error) {
-	result := make(map[string]string)
-	l := *r.GetLabels()
-	result[r.String()] = l.String()
-	return json.Marshal(result)
-}
-
-// Helper function to merge the currently assigned labels with a new labels.Set
-func (r *Route) UpdateLabel(label map[string]string) {
-	var mergedlabel labels.Set
-	mergedlabel = labels.Merge(labels.Set(label), *r.labels)
-	r.labels = &mergedlabel
-}
-
-/*
-func (r Routes) String() string {
-	routes := make([]string, 0, len(r))
-	for _, value := range r {
-		routes = append(routes, )
-	}
-	return "yes"
-}
-*/
-// Satisfy the json Interface.
-func (rts Routes) MarshalJSON() ([]byte, error) {
-	result := make(map[string]labels.Labels)
-	for _, route := range rts {
-		label := *route.GetLabels()
-		result[route.String()] = label
-	}
+func (r route) MarshalJSON() ([]byte, error) {
+	var result map[string]string
+	result = make(map[string]string)
+	result[r.cidr.String()] = r.labels.String()
 	return json.Marshal(result)
 }
